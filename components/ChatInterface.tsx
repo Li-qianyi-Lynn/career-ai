@@ -13,7 +13,7 @@ export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: 'Hello! I\'m the Rise2gether AI assistant. I can answer questions about Rise2gether and career development. How can I help you today?',
+      content: 'Hello! I\'m the Rise2gether AI Career Coach. I can answer questions about Rise2gether and career development. How can I help you today?',
     },
   ])
   const [input, setInput] = useState('')
@@ -75,7 +75,7 @@ export default function ChatInterface() {
   return (
     <div className="chat-container">
       <div className="chat-header">
-        <h1>Rise2gether AI Assistant</h1>
+        <h1>Rise2gether AI Career Coach</h1>
         <p>Your Career Development Partner</p>
       </div>
 
@@ -87,7 +87,14 @@ export default function ChatInterface() {
             </div>
             <div className="message-content">
               {message.role === 'assistant' ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: ({ node, ...props }) => (
+                      <a {...props} target="_blank" rel="noopener noreferrer" />
+                    ),
+                  }}
+                >
                   {message.content}
                 </ReactMarkdown>
               ) : (

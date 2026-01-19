@@ -63,14 +63,14 @@ career-chatbot/
 ├── components/
 │   └── ChatInterface.tsx     # Chat interface component
 ├── knowledge-base/           # Knowledge base documents
-│   └── rise2gether-info.md
+│   
 └── package.json
 ```
 
 ## Usage
 
 1. After starting the application, enter your questions in the chat interface
-2. The AI assistant will answer questions about Rise2gether and career development based on the knowledge base
+2. The AI Career Coach will answer questions about Rise2gether and career development based on the knowledge base
 3. If the knowledge base doesn't contain relevant information, the AI will honestly inform you
 
 ## Notes
