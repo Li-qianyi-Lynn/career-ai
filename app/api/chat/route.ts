@@ -1,28 +1,12 @@
+import {
+  buildContextFromChunks,
+  loadEmbeddings,
+  loadFullKnowledgeBase,
+  retrieve,
+} from '@/lib/rag'
 import Anthropic from '@anthropic-ai/sdk'
-import fs from 'fs'
 import { NextRequest, NextResponse } from 'next/server'
-import path from 'path'
-
-// Load knowledge base documents
-function loadKnowledgeBase(): string {
-  const knowledgeBaseDir = path.join(process.cwd(), 'knowledge-base')
-  let knowledgeContent = ''
-
-  try {
-    const files = fs.readdirSync(knowledgeBaseDir)
-    for (const file of files) {
-      if (file.endsWith('.md')) {
-        const filePath = path.join(knowledgeBaseDir, file)
-        const content = fs.readFileSync(filePath, 'utf-8')
-        knowledgeContent += `\n\n## ${file}\n${content}`
-      }
-    }
-  } catch (error) {
-    console.error('Error loading knowledge base:', error)
-  }
-
-  return knowledgeContent
-}
+import OpenAI from 'openai'
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,8 +24,23 @@ export async function POST(request: NextRequest) {
       apiKey: apiKey,
     })
 
-    // Load knowledge base
-    const knowledgeBase = loadKnowledgeBase()
+    // RAG: retrieve relevant chunks if embeddings exist and OpenAI key is set
+    let knowledgeBase: string
+    const openaiKey = process.env.OPENAI_API_KEY
+    const hasEmbeddings = loadEmbeddings().length > 0
+
+    if (openaiKey && hasEmbeddings) {
+      const openai = new OpenAI({ apiKey: openaiKey })
+      const chunks = await retrieve(message, { openai, topK: 6 })
+      if (chunks.length > 0) {
+        knowledgeBase = buildContextFromChunks(chunks)
+        console.log('[RAG] Using RAG retrieval')
+      } else {
+        knowledgeBase = loadFullKnowledgeBase()
+      }
+    } else {
+      knowledgeBase = loadFullKnowledgeBase()
+    }
 
     // Build system prompt
     const systemPrompt = `You are a warm, friendly, and supportive friend who's part of the Rise2gether community. You're here to have genuine conversations about Rise2gether and career development - like chatting with a trusted friend over coffee, not like a formal corporate assistant.
@@ -75,12 +74,18 @@ Important guidelines:
 
 8. Answer in English, but make it feel like a real conversation between community members.
 
-9. IMPORTANT: Do NOT use emojis, emoticons, or any special symbols (like 💙, 😊, ❤️, etc.) in your responses. Use only regular text and punctuation. Express warmth and friendliness through your words and tone, not through emojis.
+9. IMPORTANT: Do NOT use emojis, emoticons, or any special symbols (like 💙, 😊, ❤️, etc.) in your responses. Use only regular text and punctuation.
+
+10. RESPONSE FORMAT: Structure every response in two parts so users can read a short summary first:
+    - First, write a brief summary in 2-4 sentences that gives the main answer or key takeaway. This will be shown first.
+    - Then on a new line write exactly: ---DETAILS--- (nothing else on that line)
+    - Then write the full detailed response (all the same information expanded: examples, bullet points, links, and any extra context). The full part should contain everything you want to share; the summary is just a short teaser.
+    Always include ---DETAILS--- exactly once in your response so the interface can show "More details" for the rest.
 
 Knowledge base content (this includes information from Rise2gether career panels and other resources):
 ${knowledgeBase}
 
-Remember: You're not a robot giving automated responses. You're a friendly community member who has access to the wisdom shared in our career panels and resources. When you share insights, make it feel like you're passing along valuable knowledge from our community's collective experience. Be warm, be human, be yourself - but always stay true to what's actually in the knowledge base, and express yourself using words only, no emojis or special symbols!`
+Remember: You're not a robot giving automated responses. You're a friendly community member who has access to the wisdom shared in our career panels and resources. When you share insights, make it feel like you're passing along valuable knowledge from our community's collective experience. Be warm, be human, be yourself - but always stay true to what's actually in the knowledge base, and express yourself using words only, no emojis like 💙, 😊, ❤️, etc or special symbols!`
 
     // Build conversation history
     const messages: any[] = []
@@ -108,20 +113,39 @@ Remember: You're not a robot giving automated responses. You're a friendly commu
       content: message,
     })
 
-    // Call Claude API
-    const response = await anthropic.messages.create({
+    // Stream Claude API response so the user sees output immediately
+    const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1024,
       system: systemPrompt,
       messages: messages,
     })
 
-    const assistantMessage =
-      response.content[0].type === 'text'
-        ? response.content[0].text
-        : 'Sorry, I cannot process this request.'
+    const encoder = new TextEncoder()
+    const readable = new ReadableStream({
+      start(controller) {
+        stream.on('text', (textDelta: string) => {
+          controller.enqueue(encoder.encode(JSON.stringify({ text: textDelta }) + '\n'))
+        })
+        stream.on('error', (err: Error) => {
+          controller.error(err)
+        })
+        stream.done().then(() => {
+          controller.enqueue(encoder.encode(JSON.stringify({ done: true }) + '\n'))
+          controller.close()
+        }).catch((err) => {
+          controller.error(err)
+        })
+      },
+    })
 
-    return NextResponse.json({ message: assistantMessage })
+    return new Response(readable, {
+      headers: {
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
+    })
   } catch (error: any) {
     console.error('Error calling Claude API:', error)
     return NextResponse.json(
