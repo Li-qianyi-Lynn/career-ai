@@ -1,9 +1,9 @@
 'use client'
 
+import { Bot, ChevronDown, Send, Sparkles, User } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Sparkles, Send, User, Bot, ChevronDown } from 'lucide-react'
 
 const DETAILS_DELIMITER = '\n---DETAILS---\n'
 
@@ -98,8 +98,16 @@ export default function ChatInterface() {
               setMessages((prev) => {
                 const next = [...prev]
                 const last = next[next.length - 1]
-                if (last?.role === 'assistant')
-                  next[next.length - 1] = { ...last, content: fullText }
+                if (last?.role === 'assistant') {
+                  const parts = fullText.split(DETAILS_DELIMITER)
+                  const hasDetails = parts.length >= 2
+                  const summary = hasDetails ? parts[0].trim() : undefined
+                  next[next.length - 1] = {
+                    ...last,
+                    content: fullText,
+                    ...(hasDetails && { summary }),
+                  }
+                }
                 return next
               })
             }
